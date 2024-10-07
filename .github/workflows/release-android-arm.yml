@@ -69,6 +69,17 @@ jobs:
           path: resources
           key: xray-geodat-${{ github.sha }}-${{ github.run_number }}
 
+      - name: Setup NDK
+        id: setup-ndk
+        uses: actions/checkout@v4
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r21e
+          add-to-path: false
+        run: ./build.sh
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
   build:
     needs: prepare
     permissions:
@@ -93,6 +104,7 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
       GOARM: ${{ matrix.goarm }}
       CGO_ENABLED: 1
+      CC: "/Volumes/mac_backup/data/AndroidSDK/android-sdk-macosx/ndk/25.1.8937393/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi26-clang"
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
