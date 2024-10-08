@@ -17,14 +17,15 @@ on:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/release-android-arm.yml"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - "**/*.go"
       - "go.mod"
       - "go.sum"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/release-android-arm.yml"
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -34,6 +35,8 @@ jobs:
         with:
           path: resources
           key: xray-geodat-
+          restore-keys: |
+            xray-geodat-
 
       - name: Update Geodat
         id: update
@@ -62,6 +65,8 @@ jobs:
               fi
             done
 
+            printenv
+
       - name: Save Cache
         uses: actions/cache/save@v4
         if: ${{ steps.update.outputs.unhit }}
@@ -69,52 +74,18 @@ jobs:
           path: resources
           key: xray-geodat-${{ github.sha }}-${{ github.run_number }}
 
-      - name: Setup NDK
-        id: setup-ndk
-        uses: actions/checkout@v4
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r21e
-          add-to-path: false
-        run: ./build.sh
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-
   build:
     needs: prepare
     permissions:
       contents: write
     strategy:
-      matrix:
-        goos: [""]
-        goarch: [""]
-        gotoolchain: [""]
-        patch-assetname: [""]
-        
-        include:
-          # BEGIN Android ARM
-          - goos: android
-            goarch: arm
-          # END Android ARM
       fail-fast: false
 
     runs-on: ubuntu-latest
-    env:
-      GOOS: ${{ matrix.goos }}
-      GOARCH: ${{ matrix.goarch }}
-      GOARM: ${{ matrix.goarm }}
-      CGO_ENABLED: 1
-      CC: "/Volumes/mac_backup/data/AndroidSDK/android-sdk-macosx/ndk/25.1.8937393/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi26-clang"
+
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
-
-      - name: Show workflow information
-        run: |
-          _NAME=${{ matrix.patch-assetname }}
-          [ -n "$_NAME" ] || _NAME=$(jq ".[\"$GOOS-$GOARCH$GOARM$GOMIPS\"].friendlyName" -r < .github/build/friendly-filenames.json)
-          echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, GOMIPS: $GOMIPS, RELEASE_NAME: $_NAME"
-          echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -124,18 +95,36 @@ jobs:
 
       - name: Get project dependencies
         run: go mod download
-      
-      - name: Build Xray
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          add-to-path: false
+          local-cache: true
+
+      - name: Build Xray arm
         run: |
+          BASE_NDK_PATH=${{ steps.setup-ndk.outputs.ndk-path }}
+          ABI_PATH="$BASE_NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi26-clang"
+          echo "Base NDK path: $BASE_NDK_PATH"
+          echo "Using Android ABI path: $ABI_PATH"
+
+          GOOS=android GOARCH=arm CGO_ENABLED=1 CC=$ABI_PATH go build -v -o xray -trimpath -ldflags "-s -w -buildid=" ./main
+
           mkdir -p build_assets
-          make
           find . -maxdepth 1 -type f -regex './\(wxray\|xray\|xray_softfloat\)\(\|.exe\)' -exec mv {} ./build_assets/ \;
+
+          echo "ASSET_NAME=android-arm" >> $GITHUB_ENV
 
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
           path: resources
           key: xray-geodat-
+          restore-keys: |
+            xray-geodat-
 
       - name: Copy README.md & LICENSE
         run: |
@@ -164,6 +153,7 @@ jobs:
 
       - name: Upload files to Artifacts
         uses: actions/upload-artifact@v4
+        if: ${{ !env.ACT }} # jwt token needed (see https://github.com/nektos/act/issues/2135)
         with:
           name: Xray-${{ env.ASSET_NAME }}
           path: |
@@ -175,5 +165,6 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./Xray-${{ env.ASSET_NAME }}.zip*
-          tag: ${{ github.ref }}
+          tag: ${{ vars.GITHUB_REF }}
+          overwrite: true
           file_glob: true
