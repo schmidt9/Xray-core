@@ -118,6 +118,12 @@ jobs:
 
           echo "ASSET_NAME=android-arm" >> $GITHUB_ENV
 
+      - name: Generate Xray version string
+        run: |
+          VER=$(date +'v%y.%-m.%-d')
+          echo "Xray version for release: $VER"
+          echo "XRAY_VERSION=$VER" >> $GITHUB_ENV
+
       - name: Restore Cache
         uses: actions/cache/restore@v4
         with:
@@ -165,6 +171,6 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ./Xray-${{ env.ASSET_NAME }}.zip*
-          tag: ${{ vars.GITHUB_REF }}
+          tag: ${{ env.XRAY_VERSION }}
           overwrite: true
           file_glob: true
